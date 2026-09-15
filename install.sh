@@ -25,34 +25,45 @@ err()  { printf '%s[✗]%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; }
 info() { printf '%s[→]%s %s\n' "$C_CYAN" "$C_RESET" "$*"; }
 step() { printf '%s==>%s %s%s%s\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$*" "$C_RESET"; }
 
-# ===== logo (ANSI Shadow + truecolor gradient, generate on-the-fly) =====
+# ===== logo (ANSI Shadow, pure-bash truecolor gradient — zero dependency) =====
+# Logo mentah (plain block chars). Gradient diwarnai oleh bash murni di bawah.
+LOGO_PLAIN=' ██████╗ ██████╗  █████╗       ██╗███████╗██████╗ ██████╗ ██╗  ████████╗███████╗
+██╔═══██╗██╔══██╗██╔══██╗      ██║██╔════╝██╔══██╗╚════██╗██║  ╚══██╔══╝██╔════╝
+██║   ██║██████╔╝███████║█████╗██║███████╗██████╔╝ █████╔╝██║     ██║   █████╗
+██║   ██║██╔═══╝ ██╔══██║╚════╝██║╚════██║██╔═══╝ ██╔═══╝ ██║     ██║   ██╔══╝
+╚██████╔╝██║     ██║  ██║      ██║███████║██║     ███████╗███████╗██║   ███████╗
+ ╚═════╝ ╚═╝     ╚═╝  ╚═╝      ╚═╝╚══════╝╚═╝     ╚══════╝╚══════╝╚═╝   ╚══════╝'
+
+# warnai satu baris logo dengan gradient truecolor cyan->magenta (murni bash)
+#   $1 = lebar baris, teks dibaca dari stdin
+gradient_line() {
+    local w="$1" line r g b i
+    IFS= read -r line
+    for ((i=0; i<${#line}; i++)); do
+        local ch="${line:i:1}"
+        if [ "$ch" = " " ]; then
+            printf ' '
+        else
+            # interpolasi warna: r naik 0->255, g turun 255->0, b tetap 255
+            r=$(( i * 255 / (w > 1 ? w - 1 : 1) ))
+            g=$(( 255 - r ))
+            b=255
+            printf '\033[38;2;%d;%d;%dm%s\033[0m' "$r" "$g" "$b" "$ch"
+        fi
+    done
+    printf '\n'
+}
+
 banner() {
-    # coba generate logo gradient via pyfiglet; fallback ke teks polos kalau tidak ada
+    local w line
     if [ "$NO_COLOR" = "1" ]; then
-        python3 -m pyfiglet "OPA-ISP2LTE" -f ansi_shadow -w 120 2>/dev/null \
-            || echo "OPA-ISP2LTE"
+        printf '%s\n' "$LOGO_PLAIN"
     else
-        python3 - <<'PY' 2>/dev/null || echo "OPA-ISP2LTE"
-import subprocess
-try:
-    art = subprocess.run(["python3","-m","pyfiglet","OPA-ISP2LTE","-f","ansi_shadow","-w","120"],
-                         capture_output=True, text=True).stdout.rstrip("\n")
-except Exception:
-    print("OPA-ISP2LTE"); raise SystemExit
-start=(0,255,255); end=(255,0,255)
-def rgb(st,en,n):
-    return [tuple(int(st[i]+(en[i]-st[i])*(t/max(n-1,1))) for i in range(3)) for t in range(n)]
-out=[]
-for line in art.split("\n"):
-    w=max(len(line),1); ramp=rgb(start,end,w); s=""
-    for x,ch in enumerate(line):
-        if ch==" ":
-            s+=" "
-        else:
-            r,g,b=ramp[x]; s+=f"\033[38;2;{r};{g};{b}m{ch}\033[0m"
-    out.append(s)
-print("\n".join(out))
-PY
+        # lebar baris terpanjang buat normalisasi gradient
+        w=$(printf '%s\n' "$LOGO_PLAIN" | awk '{ if (length($0) > m) m=length($0) } END { print m }')
+        while IFS= read -r line; do
+            printf '%s\n' "$line" | gradient_line "$w"
+        done <<< "$LOGO_PLAIN"
     fi
     printf '  %sOpa jagain internet lo, biar nggak mati.%s\n\n' "$C_DIM" "$C_RESET"
 }
