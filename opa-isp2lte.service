@@ -1,0 +1,13 @@
+[Unit]
+Description=OPA-ISP2LTE — WAN failover (ISP <-> Modem LTE) untuk homelab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/opa-isp2lte.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
