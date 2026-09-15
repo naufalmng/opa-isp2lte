@@ -72,9 +72,15 @@ The installer detects interfaces, asks you to confirm gateways, then installs th
 
 ### ⚙️ Configuration
 
-Edit the top of `opa-isp2lte.sh`:
+Config lives in `/etc/opa-isp2lte.conf` — use the `oitl` CLI (no manual editing):
 
-| Variable | Default | Meaning |
+```bash
+oitl config list                  # view current config
+oitl config set INTERVAL 5        # change a value
+oitl config set FAILBACK_HOLD 120
+```
+
+| Key | Default | Meaning |
 |---|---|---|
 | `PRIMARY` / `BACKUP` | interface names | primary & backup paths |
 | `PRIMARY_GW` / `BACKUP_GW` | gateway IPs | gateway for each path |
@@ -83,14 +89,18 @@ Edit the top of `opa-isp2lte.sh`:
 | `FAIL_THRESHOLD` | `3` | consecutive failures → switch |
 | `FAILBACK_HOLD` | `60` | PRIMARY must be stable this many seconds before failing back |
 
-After editing: `sudo systemctl restart opa-isp2lte`.
+After changing: `oitl restart` (applies instantly).
 
 ### 🛠️ Operations
 
 ```bash
-tail -f /var/log/opa-isp2lte.log   # live log
-systemctl status opa-isp2lte       # service status
-ip route show default              # check active path
+oitl status                        # live status (route + links + daemon)
+oitl log                           # last 30 log lines
+oitl log -f                        # follow log live
+oitl switch lte                    # manual switch to LTE
+oitl switch isp                    # manual switch back to ISP
+oitl switch auto                   # return to automatic
+oitl restart                       # restart daemon
 ```
 
 ---
@@ -144,7 +154,13 @@ Installer mendeteksi interface, meminta konfirmasi gateway, lalu memasang script
 
 ### ⚙️ Konfigurasi
 
-Edit bagian atas `opa-isp2lte.sh`:
+Config tersimpan di `/etc/opa-isp2lte.conf` — pakai CLI `oitl` (tanpa edit manual):
+
+```bash
+oitl config list                  # lihat config saat ini
+oitl config set INTERVAL 5        # ubah nilai
+oitl config set FAILBACK_HOLD 120
+```
 
 | Variabel | Default | Arti |
 |---|---|---|
@@ -155,14 +171,18 @@ Edit bagian atas `opa-isp2lte.sh`:
 | `FAIL_THRESHOLD` | `3` | gagal beruntun → switch |
 | `FAILBACK_HOLD` | `60` | PRIMARY stabil segini detik baru failback |
 
-Setelah edit: `sudo systemctl restart opa-isp2lte`.
+Setelah ubah: `oitl restart` (langsung berlaku).
 
 ### 🛠️ Operasional
 
 ```bash
-tail -f /var/log/opa-isp2lte.log   # pantau log live
-systemctl status opa-isp2lte       # status service
-ip route show default              # cek jalur aktif
+oitl status                        # status live (route + link + daemon)
+oitl log                           # 30 baris log terakhir
+oitl log -f                        # pantau log live
+oitl switch lte                    # switch manual ke LTE
+oitl switch isp                    # switch manual balik ke ISP
+oitl switch auto                   # kembali ke otomatis
+oitl restart                       # restart daemon
 ```
 
 ---
