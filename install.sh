@@ -11,8 +11,10 @@ VERSION="1.0.0"
 
 # ===== color (with --no-color + TTY fallback) =====
 if [[ " $* " == *" --no-color "* ]] || [ ! -t 1 ]; then
+    NO_COLOR=1
     C_RESET="" C_BOLD="" C_GREEN="" C_YELLOW="" C_CYAN="" C_RED="" C_DIM=""
 else
+    NO_COLOR=0
     C_RESET=$'\033[0m';  C_BOLD=$'\033[1m';  C_DIM=$'\033[2m'
     C_GREEN=$'\033[0;32m'; C_YELLOW=$'\033[0;33m'; C_CYAN=$'\033[0;36m'; C_RED=$'\033[0;31m'
 fi
@@ -23,15 +25,35 @@ err()  { printf '%s[✗]%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; }
 info() { printf '%s[→]%s %s\n' "$C_CYAN" "$C_RESET" "$*"; }
 step() { printf '%s==>%s %s%s%s\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$*" "$C_RESET"; }
 
-# ===== logo =====
-LOGO='  ___  ____   _        ___ ____  ____ ____  _   _____ _____
- / _ \|  _ \ / \      |_ _/ ___||  _ \___ \| | |_   _| ____|
-| | | | |_) / _ \ _____| |\___ \| |_) |__) | |   | | |  _|
-| |_| |  __/ ___ \_____| | ___) |  __// __/| |___| | | |___
- \___/|_| /_/   \_\   |___|____/|_|  |_____|_____|_| |_____|'
-
+# ===== logo (ANSI Shadow + truecolor gradient, generate on-the-fly) =====
 banner() {
-    printf '%s%s%s\n' "$C_CYAN" "$LOGO" "$C_RESET"
+    # coba generate logo gradient via pyfiglet; fallback ke teks polos kalau tidak ada
+    if [ "$NO_COLOR" = "1" ]; then
+        python3 -m pyfiglet "OPA-ISP2LTE" -f ansi_shadow -w 120 2>/dev/null \
+            || echo "OPA-ISP2LTE"
+    else
+        python3 - <<'PY' 2>/dev/null || echo "OPA-ISP2LTE"
+import subprocess
+try:
+    art = subprocess.run(["python3","-m","pyfiglet","OPA-ISP2LTE","-f","ansi_shadow","-w","120"],
+                         capture_output=True, text=True).stdout.rstrip("\n")
+except Exception:
+    print("OPA-ISP2LTE"); raise SystemExit
+start=(0,255,255); end=(255,0,255)
+def rgb(st,en,n):
+    return [tuple(int(st[i]+(en[i]-st[i])*(t/max(n-1,1))) for i in range(3)) for t in range(n)]
+out=[]
+for line in art.split("\n"):
+    w=max(len(line),1); ramp=rgb(start,end,w); s=""
+    for x,ch in enumerate(line):
+        if ch==" ":
+            s+=" "
+        else:
+            r,g,b=ramp[x]; s+=f"\033[38;2;{r};{g};{b}m{ch}\033[0m"
+    out.append(s)
+print("\n".join(out))
+PY
+    fi
     printf '  %sOpa jagain internet lo, biar nggak mati.%s\n\n' "$C_DIM" "$C_RESET"
 }
 
