@@ -24,20 +24,38 @@ LOGO=' ██████╗ ██████╗  █████╗       █
 ╚██████╔╝██║     ██║  ██║      ██║███████║██║     ███████╗███████╗██║   ███████╗
  ╚═════╝ ╚═╝     ╚═╝  ╚═╝      ╚═╝╚══════╝╚═╝     ╚══════╝╚══════╝╚═╝   ╚══════╝'
 
-# ===== KONFIGURASI =====
+# ===== KONFIGURASI (dibaca dari /etc/opa-isp2lte.conf) =====
+CONF="${OPA_CONF:-/etc/opa-isp2lte.conf}"
+
+# default (fallback kalau config file tidak ada)
 PRIMARY="enx00e04c8f6956"
 BACKUP="enx0202025b3531"
 PRIMARY_GW="192.168.100.1"
 BACKUP_GW="192.168.200.1"
-
-PING_TARGETS=("8.8.8.8" "1.1.1.1")
-INTERVAL=10          # detik antar cek
-FAIL_THRESHOLD=3     # gagal beruntun -> switch
-FAILBACK_HOLD=60     # PRIMARY stabil segini detik baru failback
-# ======================
-
+PING_TARGETS=(8.8.8.8 1.1.1.1)
+INTERVAL=10
+FAIL_THRESHOLD=3
+FAILBACK_HOLD=60
 LOGFILE="/var/log/opa-isp2lte.log"
 STATE_DIR="/var/lib/opa-isp2lte"
+
+# muat config file (KEY=VALUE, komentar # & baris kosong diabaikan)
+if [ -f "$CONF" ]; then
+    while IFS='=' read -r key val; do
+        case "$key" in
+            ''|\#*) continue ;;
+            PRIMARY) PRIMARY="$val" ;;
+            BACKUP) BACKUP="$val" ;;
+            PRIMARY_GW) PRIMARY_GW="$val" ;;
+            BACKUP_GW) BACKUP_GW="$val" ;;
+            PING_TARGETS) read -r -a PING_TARGETS <<< "$val" ;;
+            INTERVAL) INTERVAL="$val" ;;
+            FAIL_THRESHOLD) FAIL_THRESHOLD="$val" ;;
+            FAILBACK_HOLD) FAILBACK_HOLD="$val" ;;
+            LOGFILE) LOGFILE="$val" ;;
+        esac
+    done < <(grep -vE '^\s*(#|$)' "$CONF")
+fi
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOGFILE"; }
 
