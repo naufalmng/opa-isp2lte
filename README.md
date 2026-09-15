@@ -1,12 +1,5 @@
 <div align="center">
 
-# 📡 OPA-ISP2LTE
-
-**Automatic WAN failover: ISP ↔ LTE modem, for homelab.**  
-*Failover otomatis: ISP ↔ modem LTE, untuk homelab.*
-
-> *"Opa jagain internet lo, biar nggak mati."* — *"Opa guards your internet so it never dies."*
-
 ```
  ██████╗ ██████╗  █████╗       ██╗███████╗██████╗ ██████╗ ██╗  ████████╗███████╗
 ██╔═══██╗██╔══██╗██╔══██╗      ██║██╔════╝██╔══██╗╚════██╗██║  ╚══██╔══╝██╔════╝
@@ -15,6 +8,11 @@
 ╚██████╔╝██║     ██║  ██║      ██║███████║██║     ███████╗███████╗██║   ███████╗
  ╚═════╝ ╚═╝     ╚═╝  ╚═╝      ╚═╝╚══════╝╚═╝     ╚══════╝╚══════╝╚═╝   ╚══════╝
 ```
+
+**Automatic WAN failover: ISP ↔ LTE modem, for homelab.**  
+*Failover otomatis: ISP ↔ modem LTE, untuk homelab.*
+
+> *"WAN aja aku jagain, apalagi uptime kita 😭🙏💥💀"* — *"If I can keep your WAN alive, imagine what I’d do for our uptime  😭🙏💥💀"*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](https://opensource.org/licenses/Apache-2.0)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue.svg?style=for-the-badge)](#)
