@@ -52,10 +52,21 @@ Two paths enter the server through two interfaces on **different subnets**:
 
 ### ✅ Requirements
 
-1. **Two paths on different subnets** — never put the modem and ISP on the same subnet (routing will break).
-2. **`conntrack`** installed (to flush stale connections on switch): `apt install conntrack`.
-3. **Static IPs** on both interfaces (or DHCP reservation on the modem) so gateways never change.
-4. *(Optional)* **Tailscale** — recommended as a stable access point that survives path changes.
+**Hardware**
+
+1. **Broadband internet** — a primary connection that exposes itself as a network interface on the server. Either:
+   - **Ethernet** (wired) — most common; or
+   - **WiFi** — works as long as it shows up as an interface (e.g. `wlp2s0`).
+   
+   OPA-ISP2LTE works at the **interface level**, so any interface that has a default route can be the primary path.
+2. **LTE modem (4G/5G) with a SIM** — plugged into the homelab server via **USB**. It must appear as a network interface (typically USB tethering / RNDIS, e.g. `enx…`). A phone in USB-tethering mode also works.
+
+**Software / network**
+
+3. **Two paths on different subnets** — never put the modem and ISP on the same subnet (routing will break).
+4. **`conntrack`** installed (to flush stale connections on switch): `apt install conntrack`.
+5. **Static IPs** on both interfaces (or DHCP reservation on the modem) so gateways never change.
+6. *(Optional)* **Tailscale** — recommended as a stable access point that survives path changes.
 
 ### 🚀 Quick Start
 
@@ -134,10 +145,21 @@ Dua jalur masuk ke server lewat dua interface pada **subnet yang berbeda**:
 
 ### ✅ Syarat
 
-1. **Dua jalur beda subnet** — jangan biarkan modem & ISP di subnet yang sama (routing akan rusak).
-2. **`conntrack`** terpasang (untuk flush koneksi lama saat switch): `apt install conntrack`.
-3. **IP statis** di kedua interface (atau DHCP reservation di modem) agar gateway tidak berubah.
-4. *(Opsional)* **Tailscale** — direkomendasikan sebagai akses stabil yang tidak terpengaruh pergantian jalur.
+**Perangkat keras (hardware)**
+
+1. **Internet broadband** — koneksi utama yang muncul sebagai interface jaringan di server. Bisa:
+   - **Ethernet** (kabel) — paling umum; atau
+   - **WiFi** — jalan selama muncul sebagai interface (mis. `wlp2s0`).
+   
+   OPA-ISP2LTE bekerja di **level interface**, jadi interface apa pun yang punya default route bisa jadi jalur utama.
+2. **Modem LTE (4G/5G) dengan SIM** — dicolok ke server homelab lewat **USB**. Harus muncul sebagai interface jaringan (biasanya USB tethering / RNDIS, mis. `enx…`). HP dalam mode USB-tethering juga bisa dipakai.
+
+**Software / jaringan**
+
+3. **Dua jalur beda subnet** — jangan biarkan modem & ISP di subnet yang sama (routing akan rusak).
+4. **`conntrack`** terpasang (untuk flush koneksi lama saat switch): `apt install conntrack`.
+5. **IP statis** di kedua interface (atau DHCP reservation di modem) agar gateway tidak berubah.
+6. *(Opsional)* **Tailscale** — direkomendasikan sebagai akses stabil yang tidak terpengaruh pergantian jalur.
 
 ### 🚀 Instalasi cepat
 
@@ -187,7 +209,9 @@ oitl restart                       # restart daemon
 ```
 opa-isp2lte/
 ├── install.sh           # interactive one-liner installer
-├── opa-isp2lte.sh       # main failover script (bash)
+├── oitl                 # CLI (config / status / switch / log)
+├── opa-isp2lte.sh       # failover daemon (reads config)
+├── opa-isp2lte.conf     # configuration template
 ├── opa-isp2lte.service  # systemd unit
 └── README.md            # this file
 ```
