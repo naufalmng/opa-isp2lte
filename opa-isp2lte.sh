@@ -16,6 +16,13 @@
 
 set -u
 
+# ===== LOGO (ASCII) =====
+LOGO='  ___  ____   _        ___ ____  ____ ____  _   _____ _____
+ / _ \|  _ \ / \      |_ _/ ___||  _ \___ \| | |_   _| ____|
+| | | | |_) / _ \ _____| |\___ \| |_) |__) | |   | | |  _|
+| |_| |  __/ ___ \_____| | ___) |  __// __/| |___| | | |___
+ \___/|_| /_/   \_\   |___|____/|_|  |_____|_____|_| |_____|'
+
 # ===== KONFIGURASI =====
 PRIMARY="enx00e04c8f6956"
 BACKUP="enx0202025b3531"
@@ -57,6 +64,7 @@ switch_to() {
 main() {
     local fail_count=0 stable_sec=0 cur=""
     mkdir -p "$(dirname "$LOGFILE")" "$STATE_DIR"
+    log "$LOGO"
     log "=== OPA-ISP2LTE started (${INTERVAL}s, fail ${FAIL_THRESHOLD}x, hold ${FAILBACK_HOLD}s) ==="
 
     if [ -z "$(current_iface)" ]; then

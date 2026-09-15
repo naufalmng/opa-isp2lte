@@ -7,64 +7,128 @@
 
 set -euo pipefail
 
-[[ $EUID -eq 0 ]] || { echo "Jalankan sebagai root (pakai sudo)."; exit 1; }
+VERSION="1.0.0"
 
-BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
-info()  { echo -e "${CYAN}[*]${NC} $*"; }
-ok()    { echo -e "${GREEN}[✓]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
-err()   { echo -e "${RED}[✗]${NC} $*"; }
+# ===== color (with --no-color + TTY fallback) =====
+if [[ " $* " == *" --no-color "* ]] || [ ! -t 1 ]; then
+    C_RESET="" C_BOLD="" C_GREEN="" C_YELLOW="" C_CYAN="" C_RED="" C_DIM=""
+else
+    C_RESET=$'\033[0m';  C_BOLD=$'\033[1m';  C_DIM=$'\033[2m'
+    C_GREEN=$'\033[0;32m'; C_YELLOW=$'\033[0;33m'; C_CYAN=$'\033[0;36m'; C_RED=$'\033[0;31m'
+fi
 
-echo -e "${BOLD}==============================================${NC}"
-echo -e "${BOLD}  OPA-ISP2LTE — failover ISP <-> Modem LTE${NC}"
-echo -e "${BOLD}  Opa jagain internet lo, biar nggak mati.${NC}"
-echo -e "${BOLD}==============================================${NC}"
-echo
+ok()   { printf '%s[✓]%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+warn() { printf '%s[!]%s %s\n' "$C_YELLOW" "$C_RESET" "$*" >&2; }
+err()  { printf '%s[✗]%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; }
+info() { printf '%s[→]%s %s\n' "$C_CYAN" "$C_RESET" "$*"; }
+step() { printf '%s==>%s %s%s%s\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$*" "$C_RESET"; }
 
-# ===== 1. Deteksi interface =====
-info "Mendeteksi interface jaringan..."
-mapfile -t IFACES < <(ip -o link show | awk -F': ' '{print $2}' | grep -vE '^(lo|docker|br-|veth|tailscale|tun|virbr)' | sort -u)
+# ===== logo =====
+LOGO='  ___  ____   _        ___ ____  ____ ____  _   _____ _____
+ / _ \|  _ \ / \      |_ _/ ___||  _ \___ \| | |_   _| ____|
+| | | | |_) / _ \ _____| |\___ \| |_) |__) | |   | | |  _|
+| |_| |  __/ ___ \_____| | ___) |  __// __/| |___| | | |___
+ \___/|_| /_/   \_\   |___|____/|_|  |_____|_____|_| |_____|'
 
-if [ "${#IFACES[@]}" -lt 2 ]; then
-    err "Butuh minimal 2 interface (ISP + modem). Terdeteksi: ${IFACES[*]:-tidak ada}"
+banner() {
+    printf '%s%s%s\n' "$C_CYAN" "$LOGO" "$C_RESET"
+    printf '  %sOpa jagain internet lo, biar nggak mati.%s\n\n' "$C_DIM" "$C_RESET"
+}
+
+usage() {
+    banner
+    cat <<EOF
+${C_BOLD}OPA-ISP2LTE${C_RESET} — automatic WAN failover (ISP <-> LTE) installer
+
+${C_BOLD}Usage:${C_RESET}
+  curl -fsSL <URL>/install.sh | sudo bash [options]
+
+${C_BOLD}Options:${C_RESET}
+  --help              Show this help
+  --version           Show version
+  --no-color          Disable colored output
+  --non-interactive   Auto-detect interfaces & gateways (no prompts)
+  --primary IFACE     Primary interface (ISP)   [default: auto-detect]
+  --backup IFACE      Backup interface (LTE)    [default: auto-detect]
+
+${C_BOLD}Examples:${C_RESET}
+  curl -fsSL <URL>/install.sh | sudo bash
+  curl -fsSL <URL>/install.sh | sudo bash -- --non-interactive
+  curl -fsSL <URL>/install.sh | sudo bash -- --primary enp1s0 --backup enx0011
+
+EOF
+}
+
+# ===== arg parsing =====
+NON_INTERACTIVE=0
+PRIMARY_ARG=""
+BACKUP_ARG=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --help|-h)            usage; exit 0 ;;
+        --version|-V)         echo "OPA-ISP2LTE v${VERSION}"; exit 0 ;;
+        --no-color)           : ;;
+        --non-interactive|-y) NON_INTERACTIVE=1 ;;
+        --primary)            PRIMARY_ARG="${2:-}"; shift ;;
+        --backup)             BACKUP_ARG="${2:-}"; shift ;;
+        *) err "Unknown argument: '$arg'"; echo "Run with --help for usage." >&2; exit 1 ;;
+    esac
+    shift 2>/dev/null || true
+done
+
+# ===== root check =====
+if [ "$EUID" -ne 0 ]; then
+    err "This installer needs root privileges."
+    echo "Fix: run with sudo — curl ... | sudo bash" >&2
     exit 1
 fi
 
-echo "Interface yang terdeteksi:"
-for i in "${!IFACES[@]}"; do
-    printf "  %d) %s\n" "$((i+1))" "${IFACES[$i]}"
-done
-echo
+banner
 
-# ===== 2. Pilih interface =====
+# ===== 1. detect interfaces =====
+step "Detecting network interfaces"
+mapfile -t IFACES < <(ip -o link show | awk -F': ' '{print $2}' | grep -vE '^(lo|docker|br-|veth|tailscale|tun|virbr)' | sort -u)
+
+if [ "${#IFACES[@]}" -lt 2 ]; then
+    err "Need at least 2 interfaces (ISP + modem), found ${#IFACES[@]}."
+    echo "Detected: ${IFACES[*]:-none}" >&2
+    echo "Fix: plug in both the ISP ethernet and the LTE modem, then re-run." >&2
+    exit 1
+fi
+
 pick_iface() {
-    local label="$1"
-    local sel
+    local label="$1" sel
     while true; do
-        read -rp "$label (1-${#IFACES[@]}): " sel
+        printf '%s (1-%d): ' "$label" "${#IFACES[@]}"
+        read -r sel
         if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#IFACES[@]}" ]; then
-            echo "${IFACES[$((sel-1))]}"
-            return
+            echo "${IFACES[$((sel-1))]}"; return
         fi
-        warn "Pilihan tidak valid."
+        warn "Invalid choice '$sel'. Pick 1-${#IFACES[@]}."
     done
 }
 
-info "Pilih interface untuk masing-masing jalur:"
-PRIMARY=$(pick_iface "  Interface ISP (utama)")
-BACKUP=$(pick_iface "  Interface modem LTE (cadangan)")
+if [ -n "$PRIMARY_ARG" ] && [ -n "$BACKUP_ARG" ]; then
+    PRIMARY="$PRIMARY_ARG"; BACKUP="$BACKUP_ARG"
+    info "Using provided: PRIMARY=$PRIMARY BACKUP=$BACKUP"
+elif [ "$NON_INTERACTIVE" = "1" ]; then
+    PRIMARY="${IFACES[0]}"; BACKUP="${IFACES[1]}"
+    info "Non-interactive: PRIMARY=$PRIMARY BACKUP=$BACKUP"
+else
+    echo "Available interfaces:"
+    for i in "${!IFACES[@]}"; do printf '  %d) %s\n' "$((i+1))" "${IFACES[$i]}"; done
+    echo
+    info "Pick which interface is which:"
+    PRIMARY=$(pick_iface "  ISP interface (primary)")
+    BACKUP=$(pick_iface "  LTE modem interface (backup)")
+fi
 
-# ===== 3. Deteksi IP & gateway =====
+# ===== 2. gateways =====
 detect_gw() {
-    local iface="$1"
-    # ambil subnet dari IP interface, asumsikan gateway = .1
-    local ip
-    ip=$(ip -o -4 addr show "$iface" 2>/dev/null | awk '{print $4}' | head -1)
-    if [ -z "$ip" ]; then
-        warn "Interface $iface belum punya IP. Gateway harus diisi manual."
-        return 1
-    fi
-    local base
+    local ip base
+    ip=$(ip -o -4 addr show "$1" 2>/dev/null | awk '{print $4}' | head -1)
+    [ -z "$ip" ] && return 1
     base=$(echo "$ip" | cut -d/ -f1)
     echo "$(echo "$base" | cut -d. -f1-3).1"
 }
@@ -72,36 +136,39 @@ detect_gw() {
 PRIMARY_GW=$(detect_gw "$PRIMARY" || true)
 BACKUP_GW=$(detect_gw "$BACKUP" || true)
 
-echo
-info "Konfigurasi yang akan dipakai:"
-echo -e "  PRIMARY : ${BOLD}$PRIMARY${NC}  gateway ${BOLD}${PRIMARY_GW:-?}${NC}"
-echo -e "  BACKUP  : ${BOLD}$BACKUP${NC}  gateway ${BACKUP_GW:-?}${NC}"
-echo
-
-read -rp "  Gateway ISP [$PRIMARY_GW]: " ans_primary
-[ -n "$ans_primary" ] && PRIMARY_GW="$ans_primary"
-read -rp "  Gateway modem [$BACKUP_GW]: " ans_backup
-[ -n "$ans_backup" ] && BACKUP_GW="$ans_backup"
+if [ "$NON_INTERACTIVE" = "0" ]; then
+    echo
+    step "Confirm gateways"
+    read -rp "  ISP gateway   [$PRIMARY_GW]: " ans; [ -n "$ans" ] && PRIMARY_GW="$ans"
+    read -rp "  Modem gateway [$BACKUP_GW]: " ans;  [ -n "$ans" ] && BACKUP_GW="$ans"
+fi
 
 if [ -z "$PRIMARY_GW" ] || [ -z "$BACKUP_GW" ]; then
-    err "Gateway tidak boleh kosong."
+    err "Could not determine gateways."
+    echo "Primary gateway: ${PRIMARY_GW:-missing}" >&2
+    echo "Backup gateway:  ${BACKUP_GW:-missing}" >&2
+    echo "Fix: set static IPs on both interfaces first, or pass gateways manually." >&2
     exit 1
 fi
 
-# ===== 4. Parameter deteksi (opsional, default dipakai) =====
-INTERVAL=10; FAIL_THRESHOLD=3; FAILBACK_HOLD=60
+echo
+step "Configuration summary"
+printf '  PRIMARY : %s%s%s  gw %s%s%s\n' "$C_BOLD" "$PRIMARY" "$C_RESET" "$C_BOLD" "$PRIMARY_GW" "$C_RESET"
+printf '  BACKUP  : %s%s%s  gw %s%s%s\n' "$C_BOLD" "$BACKUP" "$C_RESET" "$C_BOLD" "$BACKUP_GW" "$C_RESET"
 
-# ===== 5. Instal dependensi =====
-info "Menginstal dependensi (conntrack)..."
-if ! command -v conntrack >/dev/null 2>&1; then
-    apt-get update -y >/dev/null 2>&1
-    apt-get install -y conntrack >/dev/null 2>&1 && ok "conntrack terpasang" || warn "conntrack gagal dipasang (opsional)"
+# ===== 3. dependencies =====
+echo
+step "Installing dependency: conntrack"
+if command -v conntrack >/dev/null 2>&1; then
+    ok "conntrack already installed"
 else
-    ok "conntrack sudah ada"
+    info "apt-get install conntrack ..."
+    apt-get update -y >/dev/null 2>&1
+    apt-get install -y conntrack >/dev/null 2>&1 && ok "conntrack installed" || warn "conntrack failed to install (optional)"
 fi
 
-# ===== 6. Tulis script =====
-info "Menulis script ke /usr/local/sbin/opa-isp2lte.sh..."
+# ===== 4. write script =====
+step "Writing /usr/local/sbin/opa-isp2lte.sh"
 cat > /usr/local/sbin/opa-isp2lte.sh <<EOF
 #!/usr/bin/env bash
 # OPA-ISP2LTE — failover ISP <-> Modem LTE
@@ -111,9 +178,9 @@ BACKUP="$BACKUP"
 PRIMARY_GW="$PRIMARY_GW"
 BACKUP_GW="$BACKUP_GW"
 PING_TARGETS=("8.8.8.8" "1.1.1.1")
-INTERVAL=$INTERVAL
-FAIL_THRESHOLD=$FAIL_THRESHOLD
-FAILBACK_HOLD=$FAILBACK_HOLD
+INTERVAL=10
+FAIL_THRESHOLD=3
+FAILBACK_HOLD=60
 LOGFILE="/var/log/opa-isp2lte.log"
 log() { echo "[\$(date '+%Y-%m-%d %H:%M:%S')] \$*" >> "\$LOGFILE"; }
 current_iface() { ip route show default 2>/dev/null | awk '{print \$5}' | head -1; }
@@ -154,10 +221,10 @@ main() {
 main
 EOF
 chmod 0755 /usr/local/sbin/opa-isp2lte.sh
-ok "script ditulis"
+ok "script written"
 
-# ===== 7. Tulis service =====
-info "Menulis systemd service..."
+# ===== 5. write service =====
+step "Writing systemd service"
 cat > /etc/systemd/system/opa-isp2lte.service <<EOF
 [Unit]
 Description=OPA-ISP2LTE — WAN failover (ISP <-> Modem LTE)
@@ -173,22 +240,24 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-ok "service ditulis"
+ok "service written"
 
-# ===== 8. Aktifkan =====
+# ===== 6. enable + start =====
+step "Enabling and starting service"
 systemctl daemon-reload
 systemctl enable --now opa-isp2lte.service >/dev/null 2>&1
 sleep 3
 
 echo
 if systemctl is-active --quiet opa-isp2lte.service; then
-    ok "OPA-ISP2LTE aktif dan berjalan!"
-    echo
-    echo -e "${GREEN}Installasi selesai.${NC}"
-    echo "  Log   : tail -f /var/log/opa-isp2lte.log"
-    echo "  Status: systemctl status opa-isp2lte"
-    echo "  Cek   : ip route show default"
+    ok "OPA-ISP2LTE is running!"
+    printf '\n%sInstalled successfully.%s\n' "$C_GREEN" "$C_RESET"
+    printf '  Log    : %stail -f /var/log/opa-isp2lte.log%s\n' "$C_CYAN" "$C_RESET"
+    printf '  Status : %ssystemctl status opa-isp2lte%s\n' "$C_CYAN" "$C_RESET"
+    printf '  Check  : %sip route show default%s\n' "$C_CYAN" "$C_RESET"
+    exit 0
 else
-    err "Service gagal start. Cek: journalctl -u opa-isp2lte -n 50"
+    err "Service failed to start."
+    echo "Fix: check logs with 'journalctl -u opa-isp2lte -n 50'" >&2
     exit 1
 fi
