@@ -7,7 +7,7 @@
 
 > *"Opa jagain internet lo, biar nggak mati."* — *"Opa guards your internet so it never dies."*
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](https://opensource.org/licenses/Apache-2.0)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue.svg?style=for-the-badge)](#)
 [![Shell: Bash](https://img.shields.io/badge/Shell-Bash-4EAA25.svg?style=for-the-badge&logo=gnubash&logoColor=white)](#)
 [![Budget: Friendly](https://img.shields.io/badge/Budget-Friendly-brightgreen.svg?style=for-the-badge)](#)
@@ -172,4 +172,4 @@ opa-isp2lte/
 
 ## License
 
-[MIT](https://opensource.org/licenses/MIT) — bebas dipakai & dimodifikasi. Made with ❤️ by **OPA** for budget-friendly homelabs.
+[Apache-2.0](https://opensource.org/licenses/Apache-2.0) — bebas dipakai & dimodifikasi. Made with ❤️ by **OPA** for budget-friendly homelabs.
