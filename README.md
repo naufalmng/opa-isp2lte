@@ -22,7 +22,7 @@
 
 ### 💡 What is this?
 
-A lightweight, budget-friendly **WAN failover** for homelab servers. When your ISP connection drops — whether the cable is unplugged **or** the upstream internet goes down while the link is still up — OPA-ISP2LTE automatically switches your default route to an LTE modem (SIM). When the ISP recovers and stays stable, it fails back automatically.
+A lightweight, budget-friendly **WAN failover** for homelab servers. When your ISP connection drops — whether the cable is unplugged **or** the upstream internet goes down while the link is still up — OPA-ISP2LTE automatically switches your default route to an LTE modem (SIM). When the ISP recovers and stays stable, it fails back automatically. If NetworkManager drops the ISP profile while the physical link remains up, the daemon asks NetworkManager to reconnect it and then resumes health checks.
 
 One bash script + one systemd unit. No expensive hardware, no proprietary software.
 
@@ -115,7 +115,7 @@ oitl restart                       # restart daemon
 
 ### 💡 Apa ini?
 
-**Failover WAN** yang ringan dan hemat biaya untuk server homelab. Saat koneksi ISP putus — baik kabelnya tercabut **maupun** internet upstream-nya mati padahal link masih hidup — OPA-ISP2LTE otomatis memindahkan default route ke modem LTE (SIM). Saat ISP pulih dan stabil, otomatis kembali ke ISP.
+**Failover WAN** yang ringan dan hemat biaya untuk server homelab. Saat koneksi ISP putus — baik kabelnya tercabut **maupun** internet upstream-nya mati padahal link masih hidup — OPA-ISP2LTE otomatis memindahkan default route ke modem LTE (SIM). Saat ISP pulih dan stabil, otomatis kembali ke ISP. Jika NetworkManager menjatuhkan profil ISP saat link fisik masih aktif, daemon meminta NetworkManager menyambungkan ulang interface tersebut sebelum melanjutkan pengecekan.
 
 Satu script bash + satu unit systemd. Tanpa perangkat mahal, tanpa software proprietary.
 

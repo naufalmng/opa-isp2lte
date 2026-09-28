@@ -36,6 +36,8 @@ PING_TARGETS=(8.8.8.8 1.1.1.1)
 INTERVAL=10
 FAIL_THRESHOLD=3
 FAILBACK_HOLD=60
+PRIMARY_RECOVERY_COOLDOWN=60
+LAST_PRIMARY_RECOVERY=0
 LOGFILE="/var/log/opa-isp2lte.log"
 STATE_DIR="/var/lib/opa-isp2lte"
 
@@ -61,6 +63,23 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOGFILE"; }
 
 current_iface() { ip route show default 2>/dev/null | awk '{print $5}' | head -1; }
 link_up() { [ -e "/sys/class/net/$1/carrier" ] && [ "$(cat /sys/class/net/$1/carrier 2>/dev/null)" = "1" ]; }
+ip_ready() { ip -o -4 addr show dev "$1" scope global 2>/dev/null | grep -q .; }
+
+# Recover interface when carrier exists but NetworkManager dropped its IP/profile.
+# Cooldown prevents repeated reconnect attempts during a real ISP outage.
+recover_primary() {
+    local now iface="$PRIMARY"
+    now=$(date +%s)
+    [ "$((now - ${LAST_PRIMARY_RECOVERY:-0}))" -lt "$PRIMARY_RECOVERY_COOLDOWN" ] && return 1
+    LAST_PRIMARY_RECOVERY="$now"
+    log "PRIMARY carrier up but IPv4 missing; asking NetworkManager to reconnect $iface"
+    if command -v nmcli >/dev/null 2>&1 && nmcli device connect "$iface" >/dev/null 2>&1; then
+        log "PRIMARY NetworkManager reconnect requested"
+        return 0
+    fi
+    log "WARN: PRIMARY NetworkManager reconnect failed"
+    return 1
+}
 
 ping_ok() {
     local iface="$1" t
@@ -96,6 +115,12 @@ main() {
         local primary_up=0 backup_up=0
         link_up "$PRIMARY" && primary_up=1
         link_up "$BACKUP"  && backup_up=1
+
+        # Link can remain UP while NetworkManager drops the IPv4 profile.
+        # Recover it before declaring PRIMARY healthy or waiting for failback.
+        if [ "$primary_up" = "1" ] && ! ip_ready "$PRIMARY"; then
+            recover_primary || true
+        fi
 
         if [ "$cur" = "$PRIMARY" ]; then
             if ping_ok "$PRIMARY"; then fail_count=0
