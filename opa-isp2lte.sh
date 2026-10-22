@@ -58,7 +58,9 @@ STATE_DIR="/var/lib/opa-isp2lte"
 
 # v2 knobs
 PROBE_MODE="auto"                                     # auto | tcp | icmp
-TCP_PROBE_URL="http://connectivitycheck.gstatic.com/generate_204"
+TCP_PROBE_URL="https://www.cloudflare.com/cdn-cgi/trace"
+TCP_PROBE_EXPECT="fl="                                # substring wajib ada di body
+TCP_PROBE_MIN_BYTES=20                                # body minimal (byte)
 PROBE_TIMEOUT=4
 ROUTE_METRIC=50                                       # metric milik opa (NM pakai >=100)
 MANAGE_ROUTES=1                                       # 0 = monitor-only, jangan sentuh route
@@ -100,6 +102,8 @@ if [ -f "$CONF" ]; then
             LOGFILE)                      LOGFILE="$val" ;;
             PROBE_MODE)                   PROBE_MODE="$val" ;;
             TCP_PROBE_URL)                TCP_PROBE_URL="$val" ;;
+            TCP_PROBE_EXPECT)             TCP_PROBE_EXPECT="$val" ;;
+            TCP_PROBE_MIN_BYTES)          TCP_PROBE_MIN_BYTES="$val" ;;
             PROBE_TIMEOUT)                PROBE_TIMEOUT="$val" ;;
             ROUTE_METRIC)                 ROUTE_METRIC="$val" ;;
             MANAGE_ROUTES)                MANAGE_ROUTES="$val" ;;
@@ -125,6 +129,7 @@ FAILBACK_HOLD="$(_sane_int FAILBACK_HOLD "$FAILBACK_HOLD" 60 0)"
 RECOVERY_COOLDOWN="$(_sane_int RECOVERY_COOLDOWN "$RECOVERY_COOLDOWN" 60 0)"
 SWITCH_COOLDOWN="$(_sane_int SWITCH_COOLDOWN "$SWITCH_COOLDOWN" 20 0)"
 PROBE_TIMEOUT="$(_sane_int PROBE_TIMEOUT "$PROBE_TIMEOUT" 4 1)"
+TCP_PROBE_MIN_BYTES="$(_sane_int TCP_PROBE_MIN_BYTES "$TCP_PROBE_MIN_BYTES" 20 0)"
 ROUTE_METRIC="$(_sane_int ROUTE_METRIC "$ROUTE_METRIC" 50 1)"
 TAILSCALE_RESTART_COOLDOWN="$(_sane_int TAILSCALE_RESTART_COOLDOWN "$TAILSCALE_RESTART_COOLDOWN" 300 0)"
 
@@ -170,14 +175,33 @@ probe_icmp() {
 probe_tcp() {
     local iface="$1"
     have curl || return 2          # 2 = tidak tersedia
-    local code
-    code=$(curl --interface "$iface" -s -o /dev/null -m "$PROBE_TIMEOUT" \
-                -w '%{http_code}' "$TCP_PROBE_URL" 2>/dev/null)
-    # 204 = internet sehat; 2xx/3xx lain juga dianggap hidup
+    local code body size tmp
+    tmp="$(mktemp 2>/dev/null || echo "/tmp/.opa-probe.$$")"
+    code=$(curl --interface "$iface" -sS -o "$tmp" -m "$PROBE_TIMEOUT" \
+                -w '%{http_code}' "$TCP_PROBE_URL" 2>/dev/null) || true
+    size=$(wc -c < "$tmp" 2>/dev/null || echo 0)
+    body=$(head -c 256 "$tmp" 2>/dev/null || true)
+    rm -f "$tmp" 2>/dev/null || true
+
     case "$code" in
-        2??|3??) return 0 ;;
-        *)       return 1 ;;
+        2??|3??) ;;
+        *) return 1 ;;
     esac
+
+    # Status code saja TIDAK cukup. Modem tanpa pulsa sering menjalankan
+    # captive portal yang menjawab /generate_204 secara lokal, sehingga jalur
+    # mati terlihat sehat. Verifikasi konten body + ukuran minimum; captive
+    # portal tidak bisa memalsukan body di balik TLS yang valid.
+    if [ -n "$TCP_PROBE_EXPECT" ]; then
+        case "$body" in
+            *"$TCP_PROBE_EXPECT"*) ;;
+            *) return 1 ;;
+        esac
+    fi
+    if [ "$size" -lt "$TCP_PROBE_MIN_BYTES" ]; then
+        return 1
+    fi
+    return 0
 }
 
 # probe_ok: 0 = jalur punya internet nyata
@@ -406,6 +430,7 @@ self_test() {
     printf '%-28s %s\n' SWITCH_COOLDOWN "$SWITCH_COOLDOWN"
     printf '%-28s %s\n' PROBE_MODE "$PROBE_MODE"
     printf '%-28s %s\n' TCP_PROBE_URL "$TCP_PROBE_URL"
+    printf '%-28s %s\n' TCP_PROBE_EXPECT "$TCP_PROBE_EXPECT"
     printf '%-28s %s\n' ROUTE_METRIC "$ROUTE_METRIC"
     printf '%-28s %s\n' MANAGE_ROUTES "$MANAGE_ROUTES"
     printf '%-28s %s\n' VERIFY_BACKUP "$VERIFY_BACKUP"

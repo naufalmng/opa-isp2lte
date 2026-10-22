@@ -49,6 +49,23 @@ seluruh trafik ke jalur yang tidak punya internet.
   sebelum dipakai. Kalau tidak lolos, daemon **tetap di PRIMARY** dan mencatat
   alasannya.
 
+### Fixed — probe tertipu captive portal modem
+
+Probe v2 awal memakai `http://connectivitycheck.gstatic.com/generate_204` dan hanya
+memeriksa status code. Modem LTE tanpa pulsa sering menjalankan captive portal yang
+menjawab `/generate_204` **secara lokal**, sehingga jalur yang benar-benar mati
+terlihat sehat dan `backup_usable()` meloloskan failover ke jalur mati.
+
+Terbukti di lapangan: pada jalur LTE yang mati, `generate_204` mengembalikan 204
+dalam 0.18 s, sementara `https://www.google.com`, `https://1.1.1.1`, dan
+`https://api.ipify.org` semuanya `000` dengan 608 byte retransmisi dan `backoff:7`.
+
+- `TCP_PROBE_URL` sekarang HTTPS (`https://www.cloudflare.com/cdn-cgi/trace`).
+- `TCP_PROBE_EXPECT` (`fl=`) — substring wajib ada di body.
+- `TCP_PROBE_MIN_BYTES` (`20`) — body minimal; 204 kosong bukan bukti.
+- Captive portal tidak bisa memalsukan body di balik TLS valid tanpa MITM
+  bersertifikat, dan curl memverifikasi sertifikat secara default.
+
 ### Fixed — deteksi internet cuma ICMP
 
 - `PROBE_MODE` baru: `auto` (default) / `tcp` / `icmp`.

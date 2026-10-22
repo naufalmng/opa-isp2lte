@@ -92,7 +92,9 @@ oitl config set FAILBACK_HOLD 120
 | `PRIMARY_GW` / `BACKUP_GW` | gateway IPs | gateway for each path |
 | `PING_TARGETS` | `8.8.8.8 1.1.1.1` | ICMP detection targets |
 | `PROBE_MODE` | `auto` | `auto` (TCP authoritative, ICMP fallback) / `tcp` / `icmp` |
-| `TCP_PROBE_URL` | gstatic generate_204 | TCP health probe endpoint |
+| `TCP_PROBE_URL` | cloudflare `cdn-cgi/trace` | HTTPS health probe endpoint |
+| `TCP_PROBE_EXPECT` | `fl=` | substring that MUST appear in the body |
+| `TCP_PROBE_MIN_BYTES` | `20` | minimum body size, bytes |
 | `PROBE_TIMEOUT` | `4` | probe timeout, seconds |
 | `INTERVAL` | `10` | seconds between checks |
 | `FAIL_THRESHOLD` | `3` | consecutive failures → switch |
@@ -109,6 +111,11 @@ After changing: `oitl restart` (applies instantly).
 
 > **`VERIFY_BACKUP=1` matters.** If your LTE SIM can run out of quota, leaving it at `0`
 > means failover moves traffic onto a dead link — an outage, not redundancy.
+>
+> **Captive-portal trap.** A modem with no balance often answers `/generate_204`
+> locally, so a status-code-only probe reports the dead path as healthy. The probe
+> therefore requires HTTPS, a `TCP_PROBE_EXPECT` substring in the body, and a minimum
+> body size — none of which a captive portal can forge behind a valid TLS cert.
 
 ### 🛠️ Operations
 
