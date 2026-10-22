@@ -176,9 +176,22 @@ elif [ "$NON_INTERACTIVE" = "1" ]; then
     done
     if [ -z "$PRIMARY" ]; then PRIMARY="${IFACES[0]}"; fi
     BACKUP=""
+    # BACKUP harus interface yang benar-benar punya IPv4. Tanpa filter ini
+    # interface mati (mis. enp3s0 DOWN) bisa terpilih dan gateway-nya tidak
+    # bisa dideteksi, sehingga installer gagal di langkah berikutnya.
     for _i in "${IFACES[@]}"; do
-        if [ "$_i" != "$PRIMARY" ]; then BACKUP="$_i"; break; fi
+        [ "$_i" = "$PRIMARY" ] && continue
+        if ip -o -4 addr show dev "$_i" scope global 2>/dev/null | grep -q .; then
+            BACKUP="$_i"; break
+        fi
     done
+    if [ -z "$BACKUP" ]; then
+        for _i in "${IFACES[@]}"; do
+            [ "$_i" = "$PRIMARY" ] && continue
+            BACKUP="$_i"; break
+        done
+        [ -n "$BACKUP" ] && warn "BACKUP=$BACKUP belum punya IPv4 — set IP statis sebelum failover bisa dipakai"
+    fi
     [ -z "$BACKUP" ] && { err "tidak menemukan interface kedua untuk BACKUP"; exit 1; }
     info "Non-interactive: PRIMARY=$PRIMARY (punya default route) BACKUP=$BACKUP"
 else
