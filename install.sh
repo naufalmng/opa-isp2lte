@@ -98,6 +98,14 @@ NON_INTERACTIVE=0
 PRIMARY_ARG=""
 BACKUP_ARG=""
 
+# `curl ... | sudo bash` adalah metode instalasi resmi di README, tapi pada
+# pola itu stdin adalah pipe berisi script itu sendiri — bukan terminal.
+# `read` langsung EOF dan pick_iface() berputar selamanya mencetak
+# "Invalid choice ''. Pick 1-4." Deteksi stdin non-TTY dan matikan prompt.
+if [ ! -t 0 ]; then
+    NON_INTERACTIVE=1
+fi
+
 for arg in "$@"; do
     case "$arg" in
         --help|-h)            usage; exit 0 ;;
@@ -135,7 +143,12 @@ pick_iface() {
     local label="$1" sel
     while true; do
         printf '%s (1-%d): ' "$label" "${#IFACES[@]}"
-        read -r sel
+        # EOF (mis. stdin pipe habis) -> jangan loop, keluar dengan error
+        if ! read -r sel; then
+            err "stdin habis saat memilih interface (mode non-interaktif?)"
+            err "Pakai: --primary <iface> --backup <iface>"
+            exit 1
+        fi
         if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#IFACES[@]}" ]; then
             echo "${IFACES[$((sel-1))]}"; return
         fi
@@ -143,12 +156,31 @@ pick_iface() {
     done
 }
 
+# interface yang sedang memegang default route = kandidat PRIMARY paling akurat
+iface_with_default() {
+    ip route show default 2>/dev/null \
+        | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}'
+}
+
 if [ -n "$PRIMARY_ARG" ] && [ -n "$BACKUP_ARG" ]; then
     PRIMARY="$PRIMARY_ARG"; BACKUP="$BACKUP_ARG"
     info "Using provided: PRIMARY=$PRIMARY BACKUP=$BACKUP"
 elif [ "$NON_INTERACTIVE" = "1" ]; then
-    PRIMARY="${IFACES[0]}"; BACKUP="${IFACES[1]}"
-    info "Non-interactive: PRIMARY=$PRIMARY BACKUP=$BACKUP"
+    # pilih PRIMARY dari interface yang sedang memegang default route,
+    # bukan sekadar urutan alfabet — urutan alfabet bisa menukar ISP dan LTE
+    # dan itu berarti failover memindahkan trafik ke jalur yang salah.
+    _def_iface="$(iface_with_default)"
+    PRIMARY=""
+    for _i in "${IFACES[@]}"; do
+        if [ "$_i" = "$_def_iface" ]; then PRIMARY="$_i"; break; fi
+    done
+    if [ -z "$PRIMARY" ]; then PRIMARY="${IFACES[0]}"; fi
+    BACKUP=""
+    for _i in "${IFACES[@]}"; do
+        if [ "$_i" != "$PRIMARY" ]; then BACKUP="$_i"; break; fi
+    done
+    [ -z "$BACKUP" ] && { err "tidak menemukan interface kedua untuk BACKUP"; exit 1; }
+    info "Non-interactive: PRIMARY=$PRIMARY (punya default route) BACKUP=$BACKUP"
 else
     echo "Available interfaces:"
     for i in "${!IFACES[@]}"; do printf '  %d) %s\n' "$((i+1))" "${IFACES[$i]}"; done
