@@ -90,17 +90,31 @@ oitl config set FAILBACK_HOLD 120
 |---|---|---|
 | `PRIMARY` / `BACKUP` | interface names | primary & backup paths |
 | `PRIMARY_GW` / `BACKUP_GW` | gateway IPs | gateway for each path |
-| `PING_TARGETS` | `8.8.8.8 1.1.1.1` | internet detection targets |
+| `PING_TARGETS` | `8.8.8.8 1.1.1.1` | ICMP detection targets |
+| `PROBE_MODE` | `auto` | `auto` (TCP authoritative, ICMP fallback) / `tcp` / `icmp` |
+| `TCP_PROBE_URL` | gstatic generate_204 | TCP health probe endpoint |
+| `PROBE_TIMEOUT` | `4` | probe timeout, seconds |
 | `INTERVAL` | `10` | seconds between checks |
 | `FAIL_THRESHOLD` | `3` | consecutive failures → switch |
 | `FAILBACK_HOLD` | `60` | PRIMARY must be stable this many seconds before failing back |
+| `SWITCH_COOLDOWN` | `20` | minimum seconds between switches (anti-thrash) |
+| `RECOVERY_COOLDOWN` | `60` | minimum seconds between NM reconnect requests |
+| `ROUTE_METRIC` | `50` | metric of the route opa owns (NM must use a higher metric) |
+| `MANAGE_ROUTES` | `1` | `0` = monitor-only, never touch the routing table |
+| `VERIFY_BACKUP` | `1` | require BACKUP to pass the probe before switching to it |
+| `RESTART_TAILSCALE` | `0` | restart `tailscaled` on switch (throttled) |
+| `TAILSCALE_RESTART_COOLDOWN` | `300` | minimum seconds between tailscaled restarts |
 
 After changing: `oitl restart` (applies instantly).
+
+> **`VERIFY_BACKUP=1` matters.** If your LTE SIM can run out of quota, leaving it at `0`
+> means failover moves traffic onto a dead link — an outage, not redundancy.
 
 ### 🛠️ Operations
 
 ```bash
 oitl status                        # live status (route + links + daemon)
+oitl check                         # read-only self test: config, deps, probes, gate
 oitl log                           # last 30 log lines
 oitl log -f                        # follow log live
 oitl switch lte                    # manual switch to LTE
@@ -108,6 +122,11 @@ oitl switch isp                    # manual switch back to ISP
 oitl switch auto                   # return to automatic
 oitl restart                       # restart daemon
 ```
+
+> **Route ownership.** opa only ever touches its own default route, identified by
+> `ROUTE_METRIC`. It never runs `ip route del default` on NetworkManager's routes and
+> it installs its route with `ip route replace` (atomic). If the daemon dies, the box
+> still has a working default route from NetworkManager.
 
 ---
 

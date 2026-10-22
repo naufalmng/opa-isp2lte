@@ -1,0 +1,14 @@
+# Repo ini berisi shell script & unit systemd yang dieksekusi di Linux.
+# CRLF membuat shebang jadi "#!/usr/bin/env bash\r" -> "bad interpreter",
+# yang menyebabkan unit systemd gagal start dan daemon cuma bisa jalan
+# manual via nohup (PPid 1, tanpa restart policy).
+* text=auto eol=lf
+
+*.sh      text eol=lf
+oitl      text eol=lf
+*.service text eol=lf
+*.conf    text eol=lf
+*.md      text eol=lf
+
+*.png     binary
+*.jpg     binary

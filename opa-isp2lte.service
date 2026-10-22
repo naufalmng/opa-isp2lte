@@ -1,13 +1,27 @@
 [Unit]
 Description=OPA-ISP2LTE — WAN failover (ISP <-> Modem LTE) untuk homelab
-After=network-online.target
-Wants=network-online.target
+Documentation=https://github.com/naufalmng/opa-isp2lte
+After=network-online.target NetworkManager-wait-online.service
+Wants=network-online.target NetworkManager-wait-online.service
 
 [Service]
 Type=simple
 ExecStart=/usr/local/sbin/opa-isp2lte.sh
 Restart=always
 RestartSec=5
+TimeoutStopSec=15
+
+# jangan pernah biarkan unit ini berhenti permanen karena crash-loop
+StartLimitIntervalSec=0
+
+# prioritas rendah: failover tidak boleh berebut CPU dengan workload utama
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+# environment eksplisit (hindari proxy env nyasar ke probe curl)
+Environment=OPA_CONF=/etc/opa-isp2lte.conf
+UnsetEnvironment=http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
 
 [Install]
 WantedBy=multi-user.target

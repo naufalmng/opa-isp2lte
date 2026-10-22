@@ -7,7 +7,8 @@
 
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="2.0.0"
+RAW_BASE="https://raw.githubusercontent.com/naufalmng/opa-isp2lte/main"
 
 # ===== color (with --no-color + TTY fallback) =====
 if [[ " $* " == *" --no-color "* ]] || [ ! -t 1 ]; then
@@ -212,6 +213,16 @@ PING_TARGETS=8.8.8.8 1.1.1.1
 INTERVAL=10
 FAIL_THRESHOLD=3
 FAILBACK_HOLD=60
+SWITCH_COOLDOWN=20
+RECOVERY_COOLDOWN=60
+PROBE_MODE=auto
+TCP_PROBE_URL=http://connectivitycheck.gstatic.com/generate_204
+PROBE_TIMEOUT=4
+ROUTE_METRIC=50
+MANAGE_ROUTES=1
+VERIFY_BACKUP=1
+RESTART_TAILSCALE=0
+TAILSCALE_RESTART_COOLDOWN=300
 LOGFILE=/var/log/opa-isp2lte.log
 EOF
 ok "config written"
@@ -223,68 +234,24 @@ if [ -f "$SELF_DIR/opa-isp2lte.sh" ]; then
     install -m 0755 "$SELF_DIR/opa-isp2lte.sh" /usr/local/sbin/opa-isp2lte.sh
     ok "daemon installed (from repo)"
 else
-    # fallback: minimal daemon (baca config, logika sama)
-    cat > /usr/local/sbin/opa-isp2lte.sh <<'EOF'
-#!/usr/bin/env bash
-# OPA-ISP2LTE — failover daemon (config di /etc/opa-isp2lte.conf)
-set -u
-CONF="${OPA_CONF:-/etc/opa-isp2lte.conf}"
-PRIMARY="enx00e04c8f6956"; BACKUP="enx0202025b3531"
-PRIMARY_GW="192.168.100.1"; BACKUP_GW="192.168.200.1"
-PING_TARGETS=(8.8.8.8 1.1.1.1); INTERVAL=10; FAIL_THRESHOLD=3; FAILBACK_HOLD=60
-LOGFILE="/var/log/opa-isp2lte.log"; STATE_DIR="/var/lib/opa-isp2lte"
-if [ -f "$CONF" ]; then
-    while IFS='=' read -r key val; do
-        case "$key" in
-            ''|\#*) continue ;;
-            PRIMARY) PRIMARY="$val";; BACKUP) BACKUP="$val";;
-            PRIMARY_GW) PRIMARY_GW="$val";; BACKUP_GW) BACKUP_GW="$val";;
-            PING_TARGETS) read -r -a PING_TARGETS <<< "$val";;
-            INTERVAL) INTERVAL="$val";; FAIL_THRESHOLD) FAIL_THRESHOLD="$val";;
-            FAILBACK_HOLD) FAILBACK_HOLD="$val";; LOGFILE) LOGFILE="$val";;
-        esac
-    done < <(grep -vE '^\s*(#|$)' "$CONF")
-fi
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOGFILE"; }
-current_iface() { ip route show default 2>/dev/null | awk '{print $5}' | head -1; }
-link_up() { [ -e "/sys/class/net/$1/carrier" ] && [ "$(cat /sys/class/net/$1/carrier 2>/dev/null)" = "1" ]; }
-ping_ok() { local iface="$1" t; for t in "${PING_TARGETS[@]}"; do ping -c 1 -W 2 -I "$iface" "$t" >/dev/null 2>&1 && return 0; done; return 1; }
-switch_to() { local iface="$1" gw="$2"; while ip route show default >/dev/null 2>&1; do ip route del default 2>/dev/null || break; done; ip route add default via "$gw" dev "$iface" 2>/dev/null || { log "ERROR: add route via $gw gagal"; return 1; }; log "route -> via $gw dev $iface"; command -v conntrack >/dev/null 2>&1 && conntrack -F >/dev/null 2>&1 && log "conntrack flushed"; command -v tailscale >/dev/null 2>&1 && systemctl restart tailscaled >/dev/null 2>&1 && log "tailscaled restarted"; return 0; }
-main() {
-    local fail_count=0 stable_sec=0 cur=""
-    mkdir -p "$(dirname "$LOGFILE")" "$STATE_DIR"
-    log "=== OPA-ISP2LTE started (${INTERVAL}s, fail ${FAIL_THRESHOLD}x, hold ${FAILBACK_HOLD}s) ==="
-    if [ -z "$(current_iface)" ]; then
-        if link_up "$PRIMARY"; then switch_to "$PRIMARY" "$PRIMARY_GW"
-        elif link_up "$BACKUP"; then switch_to "$BACKUP" "$BACKUP_GW"; fi
+    # fallback: ambil daemon versi terkini dari repo (JANGAN pakai salinan
+    # embedded — salinan embedded di v1.0.0 membuat `curl | bash` selalu
+    # memasang daemon buggy yang berbeda dari repo).
+    info "daemon tidak ada di samping installer, mengunduh dari repo"
+    if ! curl -fsSL "$RAW_BASE/opa-isp2lte.sh" -o /usr/local/sbin/opa-isp2lte.sh; then
+        err "gagal mengunduh daemon dari $RAW_BASE"
+        err "unduh repo lalu jalankan: sudo bash install.sh"
+        exit 1
     fi
-    while true; do
-        cur="$(current_iface)"; [ -z "$cur" ] && cur="$PRIMARY"
-        local primary_up=0 backup_up=0
-        link_up "$PRIMARY" && primary_up=1; link_up "$BACKUP" && backup_up=1
-        if [ "$cur" = "$PRIMARY" ]; then
-            if ping_ok "$PRIMARY"; then fail_count=0; else fail_count=$((fail_count+1)); log "PRIMARY ping fail ($fail_count/$FAIL_THRESHOLD)"; fi
-            if [ "$fail_count" -ge "$FAIL_THRESHOLD" ]; then
-                [ "$backup_up" = "1" ] && { log ">>> SWITCH ke BACKUP"; switch_to "$BACKUP" "$BACKUP_GW" && log "OK: LTE"; } || log "PRIMARY down & BACKUP down"
-                fail_count=0
-            fi
-            stable_sec=0
-        else
-            if ping_ok "$BACKUP"; then fail_count=0; else fail_count=$((fail_count+1)); log "BACKUP ping fail ($fail_count/$FAIL_THRESHOLD)"; fi
-            if [ "$primary_up" = "1" ] && ping_ok "$PRIMARY"; then
-                stable_sec=$((stable_sec+INTERVAL)); log "PRIMARY stabil ${stable_sec}/${FAILBACK_HOLD}s"
-                if [ "$stable_sec" -ge "$FAILBACK_HOLD" ]; then log ">>> FAILBACK ke PRIMARY"; switch_to "$PRIMARY" "$PRIMARY_GW" && log "OK: ISP"; stable_sec=0; fi
-            else stable_sec=0; fi
-            if [ "$fail_count" -ge "$FAIL_THRESHOLD" ] && [ "$primary_up" = "1" ]; then log ">>> BACKUP down, paksa PRIMARY"; switch_to "$PRIMARY" "$PRIMARY_GW" && log "OK: PRIMARY"; fail_count=0; fi
-        fi
-        sleep "$INTERVAL"
-    done
-}
-main
-EOF
     chmod 0755 /usr/local/sbin/opa-isp2lte.sh
-    ok "daemon installed (fallback generated)"
+    ok "daemon installed (downloaded)"
 fi
+
+# pastikan LF, bukan CRLF — shebang dengan \r = "bad interpreter" dan
+# unit systemd akan gagal start (akar masalah v1.0.0)
+sed -i 's/\r$//' /usr/local/sbin/opa-isp2lte.sh
+bash -n /usr/local/sbin/opa-isp2lte.sh || { err "daemon gagal syntax check"; exit 1; }
+ok "daemon syntax ok"
 
 # ===== 6. install CLI oitl + symlink =====
 step "Installing CLI /usr/local/bin/oitl"
@@ -296,26 +263,32 @@ else
     warn "oitl CLI not found in installer dir — run 'oitl' may be unavailable."
 fi
 
-# ===== 5. write service =====
+# ===== 7. write service =====
 step "Writing systemd service"
-cat > /etc/systemd/system/opa-isp2lte.service <<EOF
-[Unit]
-Description=OPA-ISP2LTE — WAN failover (ISP <-> Modem LTE)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/sbin/opa-isp2lte.sh
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
+if [ -f "$SELF_DIR/opa-isp2lte.service" ]; then
+    install -m 0644 "$SELF_DIR/opa-isp2lte.service" /etc/systemd/system/opa-isp2lte.service
+else
+    curl -fsSL "$RAW_BASE/opa-isp2lte.service" -o /etc/systemd/system/opa-isp2lte.service \
+        || { err "gagal menulis unit systemd"; exit 1; }
+fi
+sed -i 's/\r$//' /etc/systemd/system/opa-isp2lte.service
 ok "service written"
 
-# ===== 6. enable + start =====
+# ===== 8. buang instance lama (orphan nohup) =====
+# v1.0.0 sering dipasang manual sebagai `nohup bash opa-isp2lte.sh &`
+# (PPid 1, tanpa unit). Kalau tidak dibunuh, dua instance berebut route.
+step "Membersihkan instance lama"
+if pgrep -f "opa-isp2lte\.sh" >/dev/null 2>&1; then
+    systemctl stop opa-isp2lte.service >/dev/null 2>&1 || true
+    pkill -f "opa-isp2lte\.sh" >/dev/null 2>&1 || true
+    sleep 1
+    pkill -9 -f "opa-isp2lte\.sh" >/dev/null 2>&1 || true
+    ok "instance lama dimatikan"
+else
+    ok "tidak ada instance lama"
+fi
+
+# ===== 9. enable + start =====
 step "Enabling and starting service"
 systemctl daemon-reload
 systemctl enable --now opa-isp2lte.service >/dev/null 2>&1
